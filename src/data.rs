@@ -802,6 +802,18 @@ pub struct KidSpawn {
     pub script: &'static [u8],
 }
 
+/// The big "snowball in the face" hit animation: behaviour 21, whose frames
+/// use the large close-up sprites 152..155 (a kid peeking over the snow fort
+/// getting snowballed). The shipped binary selects it purely by kid type -
+/// type 8 always dies with it, wherever the kid is - which puts the close-up
+/// out in the field; the reconstruction gates it on the castle instead.
+pub const CLOSEUP_HIT_BEHAVIOR: usize = 21;
+
+/// Kid y from which it counts as "at the castle". The snow fort occupies the
+/// bottom of the arena and the centre spawn row is y = 169 (edge spawns stay
+/// around y = 102..148), so the two zones do not overlap.
+pub const CASTLE_Y: i32 = 165;
+
 /// Cursor marker sprites: red (idle) and green (throw ready/unlimited).
 pub const CURSOR_SPRITE_RED: u8 = 124;
 pub const CURSOR_SPRITE_GREEN: u8 = 143;

@@ -470,6 +470,75 @@ fn fixed_seed_is_deterministic() {
     assert_ne!(run(0xC0FFEE), run(0xBEEF), "different seeds diverge");
 }
 
+// The big "snowball in the face" close-up (behavior 21, sprites 152..155) is
+// reserved for kids that reached the snow fort: the shipped binary maps it to
+// kid type 8 anywhere on the field, which puts the close-up out in the snow.
+#[test]
+fn closeup_hit_animation_is_reserved_for_castle_kids() {
+    let rec = &KID_SPAWN_SCRIPTS[0][0];
+
+    // type-8 kid hit far from the castle -> small death, not the close-up
+    let mut far = playing_game(20);
+    freeze_spawns(&mut far);
+    far.participants[3].kids[0].spawn_from(rec, 8);
+    {
+        let k = &mut far.participants[3].kids[0];
+        k.base_x = 100;
+        k.base_y = 140;
+        k.behavior = 35;
+    }
+    aim_at_kid(&mut far, 3, 0);
+    far.step(&Input {
+        action: true,
+        ..idle()
+    });
+    assert_eq!(far.participants[3].kids[0].kind, 0xFE);
+    assert_eq!(
+        far.participants[3].kids[0].behavior, 20,
+        "a far hit must not show the close-up face"
+    );
+
+    // type-8 kid at the castle -> close-up
+    let mut near = playing_game(20);
+    freeze_spawns(&mut near);
+    near.participants[3].kids[0].spawn_from(rec, 8);
+    {
+        let k = &mut near.participants[3].kids[0];
+        k.base_x = 140;
+        k.base_y = CASTLE_Y + 5;
+        k.behavior = 35;
+    }
+    aim_at_kid(&mut near, 3, 0);
+    near.step(&Input {
+        action: true,
+        ..idle()
+    });
+    assert_eq!(
+        near.participants[3].kids[0].behavior, CLOSEUP_HIT_BEHAVIOR,
+        "a castle hit shows the close-up"
+    );
+
+    // other kid types keep their own death animation, also at the castle
+    let mut other = playing_game(20);
+    freeze_spawns(&mut other);
+    other.participants[3].kids[0].spawn_from(rec, 5);
+    {
+        let k = &mut other.participants[3].kids[0];
+        k.base_x = 140;
+        k.base_y = CASTLE_Y + 5;
+        k.behavior = 35;
+    }
+    aim_at_kid(&mut other, 3, 0);
+    other.step(&Input {
+        action: true,
+        ..idle()
+    });
+    assert_eq!(
+        other.participants[3].kids[0].behavior, 18,
+        "type-5 keeps its own death animation"
+    );
+}
+
 // Extra: kid spawn cadence (90 frame timer, shared credit budget).
 #[test]
 fn kids_spawn_on_the_recovered_timer() {

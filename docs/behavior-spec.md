@@ -174,7 +174,13 @@ y≈102…145 and the centre (146,169).
 ## 8. Damage, scoring, elimination (CONFIRMED, `0x48B0`, `0x4763`)
 
 * A hit kid becomes type `0xFE` and plays its death behavior
-  (18/19/20/21 for types 5/6/7/8). **Only when that script finishes** does
+  (18/19/20/21 for types 5/6/7/8). Behavior 21 is the **big close-up**
+  ("snowball in the face", sprites 152..155) that belongs to the snow fort.
+  The shipped binary selects it purely by kid type, so a type-8 kid hit out in
+  the field also shows the close-up there; the reconstruction keeps the type-8
+  mapping but **only at the castle** (`y >= CASTLE_Y = 165`), using the small
+  type-7 death (behavior 20) for a type-8 kid hit in the field
+  (APPROXIMATION agreed with the project owner, `src/data.rs`). **Only when that script finishes** does
   `kids_target -= 1` and the slot free up (the spawn credit is *not*
   returned — hits consume the budget permanently).
 * Scores: kid `5/6/7/8 → 100/75/50/25`; roaming `2 → 50`,

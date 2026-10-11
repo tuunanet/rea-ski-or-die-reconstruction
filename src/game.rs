@@ -630,7 +630,8 @@ impl Game {
             k if (5..=8).contains(&k) => {
                 self.score += score_for(k);
                 if let Target::Kid { participant, slot } = e.target {
-                    self.participants[participant].kids[slot].kill();
+                    let at_castle = self.participants[participant].kids[slot].y >= CASTLE_Y;
+                    self.participants[participant].kids[slot].kill(at_castle);
                     self.flash = 8;
                     self.hit_marker = 20;
                 }

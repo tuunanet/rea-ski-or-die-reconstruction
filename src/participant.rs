@@ -163,12 +163,22 @@ impl Kid {
 
     /// Mark the kid as hit: it switches to its death behavior.
     /// (FUN_1000_48b0 tail: type -> death behavior, sprite state 0xFE.)
-    pub fn kill(&mut self) {
-        let death = DEATH_BEHAVIOR
+    ///
+    /// `at_castle` is true for kids in the snow-fort zone (y >= CASTLE_Y).
+    /// The shipped binary always gives type 8 the big close-up animation
+    /// (behavior 21); here that animation is reserved for castle hits, and a
+    /// type-8 kid hit out in the field uses the small type-7 death instead.
+    pub fn kill(&mut self, at_castle: bool) {
+        let mapped = DEATH_BEHAVIOR
             .iter()
             .find(|(k, _)| *k == self.kind)
             .map(|(_, b)| *b)
             .unwrap_or(18);
+        let death = if mapped == CLOSEUP_HIT_BEHAVIOR && !at_castle {
+            20 // the close-up belongs to the fort: use the small death instead
+        } else {
+            mapped
+        };
         self.kind = 0xFE;
         self.behavior = death;
         self.base_x = self.x;

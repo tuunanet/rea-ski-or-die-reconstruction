@@ -321,6 +321,19 @@ to the cap of 6 px after ≈13 frames; releasing the key resets instantly.
   (`[0x3994] += 1`). The player cannot be damaged: no code path writes a
   player-damage state.
 
+### 4.4b Close-up ("snowball in the face") animation — CONFIRMED mapping
+
+`0x148B0` maps kid type 8 to death behavior 21, whose frames use the large
+close-up sprites 152..155 (a kid peeking over the snow fort being snowballed);
+types 5/6/7 use behaviors 18/19/20 with the small kid sprites. There is no
+position check in the binary - the animation is drawn at the kid's block
+(`0x14A2F` copies the block x/y into the slot base) - so the original also
+shows the close-up wherever the type-8 kid was hit. Sprites 147..151 (the
+"head rising over the wall" steps) are not referenced by any behavior or
+immediate in this build. The reconstruction restricts the close-up to kids in
+the fort zone (`CASTLE_Y`), which is a deliberate deviation requested during
+play testing; see `behavior-spec.md` §8.
+
 ### 4.5 Kids (targets) and their scripts — CONFIRMED
 
 * Spawn cadence (`0x427D`): per participant a byte timer decrements every
