@@ -1,0 +1,12 @@
+[package]
+name = "snowball-war"
+version = "0.1.0"
+edition = "2021"
+description = "Independent Rust + SDL2 reconstruction of the Snowball War minigame from Ski or Die (DOS)"
+license = "MIT"
+
+[dependencies]
+sdl2 = "0.37"
+
+[profile.dev]
+opt-level = 2
