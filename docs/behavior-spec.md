@@ -204,6 +204,14 @@ arena art) is annotated by function `0x14160`: for every participant it draws
 `table[DS:0x39AC + active_kids]`, i.e. sprites **127..132** (the little count
 glyphs), at the DS:0x399C positions.
 
+The selected direction also drives the two `SFSHP.LZW` overlays: `0x14116`
+redraws the **horizon scenery band** `table[DS:0x39CE + team]` (`2,1,3,0`) at
+`(0,40)` and `0x14160` redraws the **compass** `table[DS:0x39D2 + team]`
+(`6,5,7,4`) at `(272,3)`. The records are complete images (wedge pointing
+E/S/W/N for teams 0..3, the same sectors as the count markers at DS:0x399C),
+so the compass rectangle is replaced rather than blended. Both run on a switch,
+so background and compass follow the team (details in `assets.md` §3.3).
+
 Both the draw (`0x6E67`) and the hit-queue logger (`0x4245`) are gated on
 `[0x75E3] == 1`, which `0x427D/0x4501` set to `(participant == selected)`:
 **only the selected team's kids are visible and hittable**. The roaming

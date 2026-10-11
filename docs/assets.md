@@ -53,6 +53,9 @@ planar blitter wants:
 * Single full-screen images are stored in display order (the compass in
   `SNOWFORT` reads N/E/S/W correctly with no flip); the third-party tool's BMP
   writer added an extra vertical flip, which is why its output looks wrong.
+  The `SFSHP` overlay bank is in display order too (its records line up with
+  the arena's compass and horizon band, §3.3), so only the `SFFBM` sprite bank
+  gets the mirror treatment.
 
 Verification: render a frame with the extracted data and compare with the
 original screen — `cargo run --example frame -- 300 frame.ppm` reproduces the
@@ -80,7 +83,7 @@ copies all 96 glyphs into the asset pack, so HUD text is pixel-identical.
 |---|---|---|
 | `assets/arena.png`, pack section | `SNOWFORT.LZW` | 320x200 arena background (sky, mountains, village, snow, fort, compass) |
 | `assets/sprites.png` + pack | `SFFBM.LZW` (165 sprites) | kids (walk/throw/hit/death), snowballs, hit sparks, cursor marker (124 red / 143 green), roaming specials, big characters |
-| `assets/overlay.png` + pack | `SFSHP.LZW` (24 records) | sky strips, 4 compass variants, extra characters — loaded by the module but **not** referenced by the Snowball War code (kept for completeness) |
+| `assets/overlay.png` + pack | `SFSHP.LZW` (24 records) | per-team scenery band (0-3) and per-team compass (4-7), plus extra characters — see 3.3 |
 | `assets/font.png` + pack | executable DS:0x6728 | HUD text |
 | `assets/snowball.pack` | generated | single dependency-free binary the Rust game loads |
 
@@ -104,6 +107,46 @@ fixed 16x28 placeholder used earlier.
 * Player name: top-left, from the `[0x9FE]` name table (the SKI data file
   holds the default names LOTHAR/CHRISTA/ATLE/…; the reconstruction defaults
   to the screenshot's "OLD NERD").
+
+### 3.3 Per-team background and compass
+
+The `SFSHP.LZW` records *are* used by the Snowball War module (they are shared
+with the other events, which is why a plain search for the overlay table
+misses them). Function `0x17739` blits a record (descriptor at DS:0x6CFC, set
+up by the loader at `0x1807F`); `AL` picks the video page
+(`DS:0x75E4 = A000, A200, A400, A600` — the 8 KB EGA 320x200 pages).
+
+* **Scenery band** — `0x14116` (level init `0x13DF0` and the team-switch path
+  `0x140EE`) draws record `table[DS:0x39CE + team]` at `(0, 40)`. The table is
+  `2, 1, 3, 0`, so each direction gets its own sky/mountain/horizon band.
+* **Compass** — `0x14160` (the 30-frame HUD cycler, called from the main loop)
+  draws record `table[DS:0x39D2 + team]` at `(272, 3)`, i.e. records
+  **6, 5, 7, 4**: wedges pointing E, S, W, N for teams 0..3. This matches the
+  four kid-count markers (`COMPASS_MARKERS`), which sit in the same sectors.
+
+The records are **complete images in display order** (they are *not* mirrored
+like the `SFFBM` sprite records, and index 0 is not transparent):
+
+* un-mirrored record 4 differs from the compass already baked into the arena
+  art at `(272,3)` in exactly 2 pixels, so at level start (team 3 → record 4)
+  the drawn compass is the arena's own;
+* each of `5/6/7` is that same compass with only the green wedge moved
+  (~450 px differ), and the wedge centroid points N/S/E/W as listed above;
+* the strips line up with the arena's horizon band (village/house at the same
+  x), so reversing them puts the scene in the wrong place.
+
+Because the records are full images, the reconstruction *replaces* the record
+rectangle (an opaque blit) instead of blending. The original's per-plane AND
+blit (`and es:[bp], al` with the sequencer map mask 8/4/2/1) can only clear
+bits — the compass region has bit 0 set in just 26% of its pixels, so a
+per-plane AND would leave the compass mostly black and could never paint the
+wedge into a new (black) sector.
+
+Switching the active direction (RShift+arrow) therefore changes both the
+horizon scenery and the compass, matching the original. The reconstruction
+draws the band after the arena and before the entities, and the compass from
+`draw_hud`.
+
 
 ## 4. Audio
 
@@ -165,7 +208,7 @@ python3 tools/extract/build_assets.py Ski_Or_Die assets [--preview]
 ```
 
 Reference values for the release used during analysis: pack SHA-256
-`d78508a34752423b3e03ff1e7acd132eb4d1294b2293b62f2b2e1553518215ad`
+`1a45a8486a24e77e3ac5381cd17f2b6d4c1ef1292bf62c68c0151b0252cf100a`
 (1 079 163 bytes), arena 320x200, 165 sprites, 24 overlay records, 96 glyphs.
 `assets/` is generated and git-ignored: nothing from the original game needs
 to be committed.

@@ -93,7 +93,36 @@ impl Framebuffer {
         }
     }
 
-    /// Opaque sprite blit (used for compass overlays).
+    /// Blit an SFSHP overlay record: the per-team scenery band at (0,40) and
+    /// the per-team compass at (272,3). Both records are complete images that
+    /// replace that region of the arena art (the game blits them with function
+    /// 0x17739 after the arena is displayed).
+    pub fn blit_overlay(
+        &mut self,
+        a: &Assets,
+        index: usize,
+        x: i32,
+        y: i32,
+        transparent_zero: bool,
+    ) {
+        let Some(rect) = a.overlay_sprite(index) else {
+            return;
+        };
+        for sy in 0..rect.h as usize {
+            for sx in 0..rect.w as usize {
+                let v = a
+                    .overlay_atlas
+                    .at(rect.x as usize + sx, rect.y as usize + sy);
+                if v == 0 && transparent_zero {
+                    continue;
+                }
+                let c = a.color(v);
+                self.put(x + sx as i32, y + sy as i32, c);
+            }
+        }
+    }
+
+    /// Opaque sprite blit (no index-0 transparency).
     pub fn blit_sprite_opaque(&mut self, a: &Assets, index: u8, x: i32, y: i32) {
         self.blit_sprite(a, index, x, y, false, false);
     }
@@ -164,6 +193,9 @@ pub fn draw(fb: &mut Framebuffer, g: &Game, a: &Assets) {
         }
         Phase::Playing => {
             fb.blit_arena(a);
+            // Per-team scenery band (function 0x14116 draws it at (0,40)).
+            let (bx, by) = OVERLAY_BACKGROUND_POS;
+            fb.blit_overlay(a, OVERLAY_BACKGROUND[g.selected] as usize, bx, by, false);
             draw_entities(fb, g, a);
             draw_hud(fb, g, a);
             if let Some(m) = g.message {
@@ -184,6 +216,13 @@ fn fb_x_center(s: &str) -> i32 {
 }
 
 fn draw_hud(fb: &mut Framebuffer, g: &Game, a: &Assets) {
+    // Compass for the selected team (function 0x14160, (272,3)). The overlay
+    // record is a complete compass - un-mirrored record 4 is identical to the
+    // compass baked into the arena art - so it replaces that 48x34 region
+    // rather than blending with it.
+    let (cx, cy) = OVERLAY_COMPASS_POS;
+    fb.blit_overlay(a, OVERLAY_COMPASS[g.selected] as usize, cx, cy, false);
+
     // Recovered label positions (function 0x13DF0).
     fb.text(a, 6, 5, &g.player_name, COL_NAME);
     fb.text(a, 176, 5, "LEVEL", COL_LABEL);

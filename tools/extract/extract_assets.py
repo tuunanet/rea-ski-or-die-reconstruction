@@ -190,9 +190,16 @@ def bm_bank(raw: bytes):
     return sprites, sizes
 
 
-def list_bank(raw: bytes):
+def list_bank(raw: bytes, mirror: bool = False):
     """Single full image (width*height == size-2) or a bank of
-    (width, height, raw) records preceded by a u16 count."""
+    (width, height, raw) records preceded by a u16 count.
+
+    ``mirror`` reverses every stored row; the sprite bank (SFFBM) needs it
+    because its records are stored mirrored and the original blitter flips
+    them back per frame.  The overlay bank (SFSHP) is stored in display order
+    - its un-mirrored record 4 is pixel-identical to the compass baked into
+    SNOWFORT.LZW at (272,3) until 2 stray pixels, and the scenery strips line
+    up with the arena's own horizon band (verified in assets.md 3.3)."""
     if raw[0] * raw[1] == len(raw) - 2:
         w, h = raw[0], raw[1]
         return [(nibbles_to_rows(raw[2:], w, h), w * 2, h)]
@@ -203,8 +210,8 @@ def list_bank(raw: bytes):
         w = raw[p]
         h = raw[p + 1]
         rows = nibbles_to_rows(raw[p + 2:p + 2 + w * h], w, h)
-        # Same convention as the *BM banks: mirror each stored row.
-        rows = [list(reversed(r)) for r in rows]
+        if mirror:
+            rows = [list(reversed(r)) for r in rows]
         imgs.append((rows, w * 2, h))
         p += 2 + w * h
     return imgs

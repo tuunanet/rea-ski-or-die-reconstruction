@@ -818,6 +818,17 @@ pub const CASTLE_Y: i32 = 165;
 pub const CURSOR_SPRITE_RED: u8 = 124;
 pub const CURSOR_SPRITE_GREEN: u8 = 143;
 
+/// Per-team overlay sprites. Function 0x14116 draws a scenery band from the
+/// SFSHP record bank at (0, 40) when a team is selected (DS:0x39CE = 2,1,3,0),
+/// and function 0x14160 draws the compass highlight at (272, 3)
+/// (DS:0x39D2 = 6,5,7,4). Works on the overlay atlas, so switching teams
+/// changes both the arena background and the compass wedge.
+pub static OVERLAY_BACKGROUND: [u8; 4] = [2, 1, 3, 0];
+pub static OVERLAY_COMPASS: [u8; 4] = [6, 5, 7, 4];
+/// Draw positions recovered from 0x14116 / 0x14160.
+pub const OVERLAY_BACKGROUND_POS: (i32, i32) = (0, 40);
+pub const OVERLAY_COMPASS_POS: (i32, i32) = (272, 3);
+
 /// Compass status positions for the four participants (x, y) - [0x399C].
 pub static COMPASS_MARKERS: [(i32, i32); 4] = [(302, 20), (292, 28), (280, 20), (292, 13)];
 
