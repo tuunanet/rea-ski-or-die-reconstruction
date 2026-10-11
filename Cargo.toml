@@ -3,7 +3,7 @@ name = "snowball-war"
 version = "0.1.0"
 edition = "2021"
 description = "Independent Rust + SDL2 reconstruction of the Snowball War minigame from Ski or Die (DOS)"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 sdl2 = "0.37"
