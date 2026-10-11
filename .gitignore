@@ -1,3 +1,32 @@
+# ---- Rust build output ----
 /target
-/Ski_Or_Die
+**/*.rs.bk
+
+# ---- original game files (never committed) ----
+#   put your own Ski or Die copy here; tools/extract/build_assets.py reads it
+/Ski_Or_Die/
+
+# ---- assets generated from the game copy (never committed) ----
+/assets
+*.ppm
+
+# ---- analysis scratch / snapshots ----
 *.snap
+*.unpacked.bin
+*.unpacked.mz
+*.unpacked.*.json
+
+# ---- helper tool build output ----
+#   (the vendored C reference tool, if present, is built in place)
+__pycache__/
+*.py[cod]
+*.o
+/tools/copy-protection/skiordietoolz
+/tools/copy-protection/extract/
+/tools/copy-protection/status/
+
+# ---- editors / OS ----
+.DS_Store
+Thumbs.db
+*.swp
+*~

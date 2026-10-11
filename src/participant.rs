@@ -14,11 +14,10 @@ use crate::data::*;
 use crate::game::{QueueEntry, Target};
 use crate::snowball::Snowball;
 
-/// Approximate kid hit box. The original derives width/height from sprite
-/// descriptors (segment pointers resolved at runtime, not recoverable
-/// statically); 16x28 is a documented approximation (see behavior-spec.md).
-pub const KID_W: i32 = 16;
-pub const KID_H: i32 = 28;
+/// Kid sprites are 8..52 pixels wide and 12..51 tall (SPRITE_SIZES); the
+/// collision box tracks the current animation frame, exactly like the
+/// original box update in function 0x16E67.
+pub const KID_SPRITE_FALLBACK: u8 = 0;
 
 pub const KID_SLOTS: usize = 4;
 
@@ -46,6 +45,10 @@ pub struct Kid {
     pub frame: usize,
     pub delay: i32,
     pub done: bool,
+    /// Current sprite index in the SFFBM bank.
+    pub sprite: u8,
+    /// Horizontal mirror flag of the current behaviour frame ([SI+0xE]).
+    pub mirror: bool,
 }
 
 impl Default for Kid {
@@ -63,6 +66,8 @@ impl Default for Kid {
             frame: 0,
             delay: 0,
             done: false,
+            sprite: KID_SPRITE_FALLBACK,
+            mirror: false,
         }
     }
 }
@@ -81,14 +86,22 @@ impl Kid {
         self.frame = 0;
         self.delay = 0;
         self.done = false;
+        self.sprite = BEHAVIORS[s.behavior].frames[0].0;
+        self.mirror = BEHAVIORS[s.behavior].frames[0].1 != 0;
     }
 
+    /// Collision box: the current animation frame's sprite size, with the
+    /// baseline at (x, y) - mirrors the box update in function 0x16E67.
     pub fn rect(&self) -> crate::arena::Rect {
+        let (w, h) = SPRITE_SIZES
+            .get(self.sprite as usize)
+            .map(|(w, h)| (*w as i32, *h as i32))
+            .unwrap_or((16, 28));
         crate::arena::Rect {
             x: self.x,
             y: self.y,
-            w: KID_W,
-            h: KID_H,
+            w,
+            h,
         }
     }
 
@@ -103,7 +116,9 @@ impl Kid {
             return;
         }
         let beh = &BEHAVIORS[self.behavior];
-        if let Some((dx, dy)) = beh.frames.get(self.frame) {
+        if let Some((sprite, mirror, dx, dy)) = beh.frames.get(self.frame) {
+            self.sprite = *sprite;
+            self.mirror = *mirror != 0;
             let (nx, ny) = clamp_object(self.base_x + *dx as i32, self.base_y + *dy as i32);
             self.x = nx;
             self.y = ny;
@@ -141,6 +156,8 @@ impl Kid {
         self.frame = 0;
         self.delay = 0;
         self.done = false;
+        self.sprite = BEHAVIORS[next as usize].frames[0].0;
+        self.mirror = BEHAVIORS[next as usize].frames[0].1 != 0;
         None
     }
 
@@ -158,6 +175,8 @@ impl Kid {
         self.frame = 0;
         self.delay = 0;
         self.done = false;
+        self.sprite = BEHAVIORS[death].frames[0].0;
+        self.mirror = BEHAVIORS[death].frames[0].1 != 0;
     }
 
     /// Full per-frame kid update. Order mirrors 0x14338:

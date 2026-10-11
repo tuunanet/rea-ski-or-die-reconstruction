@@ -1,253 +1,245 @@
-//! Procedural SDL2 rendering for the Snowball War reconstruction.
+//! Software renderer using the original game graphics.
 //!
-//! Only original placeholder artwork is used; sprite files from the game are
-//! not read. HUD label positions come from the recovered draw calls
-//! (functions 0x13DF0, 0x1470B, 0x14763, 0x14A49).
+//! Layout, colours and sprite selection follow the recovered code:
+//!   * arena background      - SNOWFORT.LZW (image loader 0x17F7B)
+//!   * sprites               - SFFBM.LZW bank, indices 0..=164 (0x17FF4)
+//!   * HUD text              - 8x8 font at DS:0x6728, drawn by 0x162CE/0x17AE2
+//!   * HUD labels/values     - label colours DS:0x7618 (13), value 0x7619 (14)
+//!   * cursor marker         - sprites 124 (red) / 143 (green) chosen in 0x13FDF
+//!   * compass counts        - sprites 127..=132 at the DS:0x399C positions
+//!     (function 0x14160 picks the sprite from the participant's kid count)
+//!   * sprite positions use the bottom-left origin and even x, as the original
+//!     blitter does (`and bx,0xfffe` in 0x177E7).
 
-use sdl2::pixels::Color;
-use sdl2::render::Canvas;
-use sdl2::video::Window;
-
+use crate::assets::Assets;
 use crate::data::*;
-use crate::font::glyph;
 use crate::game::{Game, Phase};
+use crate::roam::RoamState;
 
-const W: u32 = 320;
-const H: u32 = 200;
+pub const W: usize = 320;
+pub const H: usize = 200;
 
-const SKY: Color = Color::RGB(90, 110, 160);
-const HUD_BG: Color = Color::RGB(30, 30, 60);
-const SNOW: Color = Color::RGB(235, 240, 250);
-const SNOW_SHADE: Color = Color::RGB(205, 215, 235);
-const TEXT: Color = Color::RGB(255, 255, 160);
-const TEXT_DIM: Color = Color::RGB(200, 200, 220);
-const PLAYER_C: Color = Color::RGB(80, 160, 255);
-const KID_COLORS: [Color; 4] = [
-    Color::RGB(250, 120, 100),
-    Color::RGB(250, 190, 90),
-    Color::RGB(150, 240, 130),
-    Color::RGB(240, 130, 240),
-];
-const ROAM_C: Color = Color::RGB(255, 255, 255);
-const PICKUP_C: Color = Color::RGB(255, 230, 90);
-const BALL_C: Color = Color::RGB(255, 255, 255);
+pub struct Framebuffer {
+    pub px: Vec<u8>, // RGBA
+}
 
-fn text(canvas: &mut Canvas<Window>, x: i32, y: i32, s: &str, c: Color) -> Result<(), String> {
-    canvas.set_draw_color(c);
-    let mut cx = x;
-    for ch in s.chars() {
-        if let Some(rows) = glyph(ch) {
-            for (r, bits) in rows.iter().enumerate() {
-                for b in 0..5u8 {
-                    if bits & (1 << (4 - b)) != 0 {
-                        let px = cx + b as i32;
-                        let py = y + r as i32;
-                        if (0..W as i32).contains(&px) && (0..H as i32).contains(&py) {
-                            canvas.draw_point((px, py))?;
+impl Default for Framebuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Framebuffer {
+    pub fn new() -> Self {
+        Framebuffer {
+            px: vec![0; W * H * 4],
+        }
+    }
+
+    fn put(&mut self, x: i32, y: i32, rgb: [u8; 3]) {
+        if x < 0 || y < 0 || x >= W as i32 || y >= H as i32 {
+            return;
+        }
+        let i = (y as usize * W + x as usize) * 4;
+        self.px[i] = rgb[0];
+        self.px[i + 1] = rgb[1];
+        self.px[i + 2] = rgb[2];
+        self.px[i + 3] = 255;
+    }
+
+    fn clear(&mut self, rgb: [u8; 3]) {
+        for i in (0..self.px.len()).step_by(4) {
+            self.px[i] = rgb[0];
+            self.px[i + 1] = rgb[1];
+            self.px[i + 2] = rgb[2];
+            self.px[i + 3] = 255;
+        }
+    }
+
+    pub fn blit_arena(&mut self, a: &Assets) {
+        for y in 0..a.arena.h {
+            for x in 0..a.arena.w {
+                let c = a.color(a.arena.at(x, y));
+                self.put(x as i32, y as i32, c);
+            }
+        }
+    }
+
+    /// Draw sprite `index` with its bottom-left corner at (x, y).
+    /// `mirror` applies the horizontal flip flag the original blitter takes in
+    /// AH (function 0x177E7, per-frame byte [SI+0xE]).
+    pub fn blit_sprite(
+        &mut self,
+        a: &Assets,
+        index: u8,
+        x: i32,
+        y: i32,
+        mirror: bool,
+        transparent_zero: bool,
+    ) {
+        let Some(r) = a.sprite(index) else { return };
+        let x = x & !1;
+        let top = y - r.h as i32;
+        for sy in 0..r.h as usize {
+            for sx in 0..r.w as usize {
+                let v = a.sprite_atlas.at(r.x as usize + sx, r.y as usize + sy);
+                if v == 0 && transparent_zero {
+                    continue;
+                }
+                let dx = if mirror { r.w as usize - 1 - sx } else { sx };
+                let c = a.color(v);
+                self.put(x + dx as i32, top + sy as i32, c);
+            }
+        }
+    }
+
+    /// Opaque sprite blit (used for compass overlays).
+    pub fn blit_sprite_opaque(&mut self, a: &Assets, index: u8, x: i32, y: i32) {
+        self.blit_sprite(a, index, x, y, false, false);
+    }
+
+    pub fn text(&mut self, a: &Assets, x: i32, y: i32, s: &str, color_index: u8) {
+        let rgb = a.color(color_index);
+        let mut cx = x;
+        for ch in s.chars() {
+            if let Some(glyph) = a.font.glyph(ch) {
+                for (row, bits) in glyph.iter().enumerate() {
+                    for b in 0..8 {
+                        if bits & (0x80 >> b) != 0 {
+                            self.put(cx + b, y + row as i32, rgb);
                         }
                     }
                 }
             }
+            cx += 8;
         }
-        cx += 8; // 8-pixel cell advance (matches the original label grid)
     }
-    Ok(())
+
+    pub fn text_center(&mut self, a: &Assets, y: i32, s: &str, color_index: u8) {
+        let x = (W as i32 - s.chars().count() as i32 * 8) / 2;
+        self.text(a, x.max(0), y, s, color_index);
+    }
 }
 
-fn fill(
-    canvas: &mut Canvas<Window>,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    c: Color,
-) -> Result<(), String> {
-    canvas.set_draw_color(c);
-    if w <= 0 || h <= 0 {
-        return Ok(());
-    }
-    let rect = sdl2::rect::Rect::new(x, y, w as u32, h as u32);
-    canvas.fill_rect(rect)?;
-    Ok(())
+/// HUD colours from the recovered data (DS:0x7614..0x761B).
+const COL_LABEL: u8 = 13; // light magenta - "SCORE", "TIME", ...
+const COL_VALUE: u8 = 14; // yellow - numbers
+const COL_NAME: u8 = 12; // light red - player name
+const COL_MSG: u8 = 10; // light green - bonus / powerup banners
+
+fn number(v: i32) -> String {
+    v.to_string()
 }
 
-/// Simple standing figure drawn from its baseline.
-fn figure(
-    canvas: &mut Canvas<Window>,
-    x: i32,
-    y: i32,
-    h: i32,
-    c: Color,
-    frame: usize,
-) -> Result<(), String> {
-    let body_top = y - h + 6;
-    // head
-    fill(canvas, x + 4, body_top - 6, 7, 6, c)?;
-    // torso
-    fill(canvas, x + 3, body_top, 9, h - 14, c)?;
-    // legs
-    fill(canvas, x + 3, y - 8, 3, 8, c)?;
-    fill(canvas, x + 9, y - 8, 3, 8, c)?;
-    // swinging arm (animation)
-    let swing = match frame % 4 {
-        0 => 0,
-        1 => 2,
-        2 => 4,
-        _ => 2,
-    };
-    fill(canvas, x - 2 + swing, body_top + 2, 5, 3, c)?;
-    fill(canvas, x + 12 - swing, body_top + 2, 5, 3, c)?;
-    Ok(())
-}
-
-pub fn draw(canvas: &mut Canvas<Window>, g: &Game) -> Result<(), String> {
-    canvas.set_draw_color(SKY);
-    canvas.clear();
-
-    // Arena backdrop (procedural).
-    fill(canvas, 0, 0, W as i32, ARENA_TOP, HUD_BG)?;
-    fill(canvas, 0, ARENA_TOP, W as i32, H as i32 - ARENA_TOP, SNOW)?;
-    // Snow drifts / snow fort silhouette.
-    canvas.set_draw_color(SNOW_SHADE);
-    for i in 0..10 {
-        let x = 10 + i * 31;
-        canvas.draw_line((x, 190), (x + 24, 176 - (i % 3) * 6))?;
-    }
-    fill(canvas, 120, 60, 60, 6, SNOW_SHADE)?;
-    fill(canvas, 130, 54, 40, 6, SNOW_SHADE)?;
-
+pub fn draw(fb: &mut Framebuffer, g: &Game, a: &Assets) {
+    fb.clear(a.color(0));
     match g.phase {
         Phase::Menu => {
-            text(canvas, 92, 60, "SNOWBALL WAR", TEXT)?;
-            text(
-                canvas,
-                40,
-                78,
-                "SKI OR DIE MINIGAME RECONSTRUCTION",
-                TEXT_DIM,
-            )?;
-            text(
-                canvas,
-                56,
-                104,
+            fb.blit_arena(a);
+            fb.text_center(a, 40, "SNOWBALL WAR", COL_LABEL);
+            fb.text_center(a, 56, "SKI OR DIE RECONSTRUCTION", COL_VALUE);
+            fb.text_center(
+                a,
+                84,
                 if g.practice {
                     "MODE: PRACTICE"
                 } else {
                     "MODE: COMPETITION"
                 },
-                TEXT,
-            )?;
-            text(canvas, 52, 122, "PRESS ENTER TO START", TEXT)?;
-            text(canvas, 44, 138, "M: MODE  ARROWS: MOVE", TEXT_DIM)?;
-            text(canvas, 44, 150, "ENTER: THROW  RSHIFT: SWITCH", TEXT_DIM)?;
+                COL_MSG,
+            );
+            fb.text_center(a, 104, "PRESS ENTER TO START", COL_VALUE);
+            fb.text_center(a, 124, "ARROWS MOVE  ENTER THROWS", COL_LABEL);
+            fb.text_center(a, 136, "RSHIFT+ARROW SWITCHES DIRECTION", COL_LABEL);
+            fb.text_center(a, 152, "M MODE   P PAUSE   ESC END", COL_LABEL);
         }
         Phase::RoundOver => {
+            fb.blit_arena(a);
             if let Some(r) = &g.result {
-                text(canvas, 52, 70, r.message, TEXT)?;
-                let s = format!("SCORE {}", r.score);
-                text(canvas, 96, 96, &s, TEXT)?;
-                let l = format!("LEVEL {}", r.level);
-                text(canvas, 104, 112, &l, TEXT)?;
+                fb.text_center(a, 70, r.message, COL_MSG);
+                fb.text_center(a, 96, &format!("SCORE {}", r.score), COL_VALUE);
+                fb.text_center(a, 112, &format!("LEVEL {}", r.level), COL_VALUE);
             }
-            text(canvas, 76, 140, "PRESS ENTER", TEXT_DIM)?;
+            fb.text_center(a, 140, "PRESS ENTER", COL_LABEL);
         }
         Phase::Playing => {
-            draw_hud(canvas, g)?;
-            draw_entities(canvas, g)?;
+            fb.blit_arena(a);
+            draw_entities(fb, g, a);
+            draw_hud(fb, g, a);
             if let Some(m) = g.message {
-                text(canvas, 52, 105, m, TEXT)?;
+                fb.text(a, fb_x_center(m), 105, m, COL_MSG);
             }
             if let Some(b) = g.banner {
-                text(canvas, 80, 18, b, PICKUP_C)?;
+                fb.text(a, 80, 18, b, COL_MSG);
             }
             if g.paused {
-                text(canvas, 128, 100, "PAUSED", TEXT)?;
-            }
-            if g.flash > 0 {
-                canvas.set_draw_color(Color::RGB(255, 255, 255));
-                for _ in 0..12 {
-                    // spark effect placeholder around the playfield
-                    canvas.draw_point((40 + g.flash * 7, 90 + g.flash * 3))?;
-                }
+                fb.text_center(a, 100, "PAUSED", COL_VALUE);
             }
         }
     }
-    canvas.present();
-    Ok(())
 }
 
-fn draw_hud(canvas: &mut Canvas<Window>, g: &Game) -> Result<(), String> {
+fn fb_x_center(s: &str) -> i32 {
+    (W as i32 - s.chars().count() as i32 * 8) / 2
+}
+
+fn draw_hud(fb: &mut Framebuffer, g: &Game, a: &Assets) {
     // Recovered label positions (function 0x13DF0).
-    text(
-        canvas,
-        6,
-        5,
-        if g.practice { "PRACTICE" } else { "SNOWFIGHT!" },
-        TEXT_DIM,
-    )?;
-    text(canvas, 176, 5, "LEVEL", TEXT)?;
-    text(canvas, 216, 5, &g.level.to_string(), TEXT)?;
-    text(canvas, 6, 23, "SCORE", TEXT)?;
-    text(canvas, 6, 30, &g.score.to_string(), TEXT)?;
-    text(canvas, 80, 23, "SNOWBALLS   KIDS", TEXT)?;
-    text(canvas, 104, 30, &g.snowballs.to_string(), TEXT)?;
-    text(canvas, 184, 30, &g.kids_left.to_string(), TEXT)?;
-    text(canvas, 224, 23, "TIME", TEXT)?;
-    text(canvas, 232, 30, &g.time_left.to_string(), TEXT)?;
-    Ok(())
+    fb.text(a, 6, 5, &g.player_name, COL_NAME);
+    fb.text(a, 176, 5, "LEVEL", COL_LABEL);
+    fb.text(a, 216, 5, &number(g.level), COL_VALUE);
+    fb.text(a, 6, 23, "SCORE", COL_LABEL);
+    fb.text(a, 6, 30, &number(g.score), COL_VALUE);
+    fb.text(a, 80, 23, "SNOWBALLS   KIDS", COL_LABEL);
+    fb.text(a, 104, 30, &number(g.snowballs), COL_VALUE);
+    fb.text(a, 184, 30, &number(g.kids_left), COL_VALUE);
+    fb.text(a, 224, 23, "TIME", COL_LABEL);
+    fb.text(a, 232, 30, &number(g.time_left), COL_VALUE);
+
+    // Compass: one count sprite per participant at the recovered positions
+    // (function 0x14160: sprite = table[0x39AC + kid_count]).
+    for (i, p) in g.participants.iter().enumerate() {
+        let count = p.active_kid_count().min(5);
+        let (x, y) = COMPASS_MARKERS[i];
+        let sprite = 127 + count; // sprites 127..=132 are the count glyphs
+        fb.blit_sprite(a, sprite, x, y, false, true);
+    }
 }
 
-fn draw_entities(canvas: &mut Canvas<Window>, g: &Game) -> Result<(), String> {
-    // Painter's order: sort by baseline y (original sorts the draw list at
+fn draw_entities(fb: &mut Framebuffer, g: &Game, a: &Assets) {
+    // Painter's order by baseline y (the original sorts its draw list at
     // function 0x171A7).
-    let mut items: Vec<(i32, u8, usize, i32, i32, i32)> = Vec::new();
-    // kind: 0 kid, 1 player, 2 roam, 3 pickup, 4 snowball
-    for (pi, p) in g.participants.iter().enumerate() {
-        for (si, k) in p.kids.iter().enumerate() {
+    // Only the selected participant's objects are drawn and hittable: the
+    // original gates both the draw (0x16E67) and the hit-queue logger (0x14245)
+    // on [0x75E3] = (participant == [0x39CD]). The player switches teams with
+    // RShift + a cardinal key; the compass shows every team's kid count.
+    let mut items: Vec<(i32, u8, bool, i32, i32)> = Vec::new(); // (y, sprite, mirror, x, y)
+    if let Some(p) = g.participants.get(g.selected) {
+        for k in p.kids.iter() {
             if k.active {
-                items.push((k.y, 0, si, k.x, k.kind as i32, pi as i32));
+                items.push((k.y, k.sprite, k.mirror, k.x, k.y));
             }
         }
         for s in p.snowballs.iter() {
             if s.active {
-                items.push((s.y, 4, 0, s.x, 0, 0));
+                items.push((s.y, s.sprite, s.mirror, s.x, s.y));
             }
         }
     }
-    items.push((g.player.y, 1, 0, g.player.x, 0, 0));
-    if g.roam.in_queue() || matches!(g.roam.state, crate::roam::RoamState::Dying) {
+    if matches!(g.roam.state, RoamState::Moving | RoamState::Dying) {
         let (x, y) = g.roam.box_origin();
-        items.push((y, 2, g.roam.kind as usize, x, 0, 0));
+        items.push((y, g.roam.sprite(), g.roam.mirror(), x, y));
     }
     if g.pickup.active {
-        items.push((g.pickup.y, 3, 0, g.pickup.x, g.pickup.kind as i32, 0));
+        // Pickups reuse the snowball sprite (the original logs them as an
+        // object with the same descriptor path).
+        items.push((g.pickup.y, 141, false, g.pickup.x, g.pickup.y));
     }
+    // Cursor marker on top of same-row entities.
+    items.push((g.player.y, g.cursor_sprite(), false, g.player.x, g.player.y));
     items.sort_by_key(|it| it.0);
 
-    for (y, kind, extra, x, param, _) in items {
-        match kind {
-            0 => {
-                let color = if param == 0xFE {
-                    Color::RGB(120, 120, 140)
-                } else {
-                    KID_COLORS[((param as usize).wrapping_sub(5)) % KID_COLORS.len()]
-                };
-                figure(canvas, x, y, KID_H_ABS, color, (extra + y as usize) % 4)?;
-            }
-            1 => figure(canvas, x, y, 28, PLAYER_C, 0)?,
-            2 => figure(canvas, x, y, 24, ROAM_C, extra % 4)?,
-            3 => {
-                fill(canvas, x, y - 8, 8, 8, PICKUP_C)?;
-                fill(canvas, x + 2, y - 6, 4, 4, Color::RGB(255, 255, 255))?;
-            }
-            _ => {
-                canvas.set_draw_color(BALL_C);
-                canvas.fill_rect(sdl2::rect::Rect::new(x, y - 3, 5, 5))?;
-            }
-        }
+    for (_y, sprite, mirror, x, y) in items {
+        fb.blit_sprite(a, sprite, x, y, mirror, true);
     }
-    Ok(())
 }
-
-/// Kid sprite height used for the procedural figure (box height).
-const KID_H_ABS: i32 = 28;

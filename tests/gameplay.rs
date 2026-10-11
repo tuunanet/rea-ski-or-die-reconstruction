@@ -3,7 +3,7 @@
 //! Each test documents the recovered rule it verifies and the original
 //! address the rule comes from (see docs/behavior-spec.md).
 
-use snowball_war::arena::kid_out_of_bounds;
+use snowball_war::arena::{kid_out_of_bounds, Rect as ARect};
 use snowball_war::data::*;
 use snowball_war::game::{Game, Phase, Target};
 use snowball_war::input::Input;
@@ -24,6 +24,30 @@ fn freeze_spawns(g: &mut Game) {
 
 fn idle() -> Input {
     Input::default()
+}
+
+/// Freeze the kid on its current animation frame and aim the cursor so its
+/// hot point (x+9, y-8) lands in the middle of the kid's real hit box.
+fn aim_at_kid(g: &mut Game, participant: usize, slot: usize) {
+    use snowball_war::data::{ATTACK_DX, ATTACK_DY, BEHAVIORS, SPRITE_SIZES};
+    let kid = &mut g.participants[participant].kids[slot];
+    kid.frame = 0;
+    kid.delay = 1000; // keep the frame/sprite stable through the next step
+    let (sprite, _mirror, dx, dy) = BEHAVIORS[kid.behavior].frames[0];
+    let (w, h) = SPRITE_SIZES[sprite as usize];
+    let x = kid.base_x + dx as i32;
+    let y = kid.base_y + dy as i32;
+    let (hx, hy) = (x + w as i32 / 2, y - h as i32 / 2);
+    let r: ARect = ARect {
+        x,
+        y,
+        w: w as i32,
+        h: h as i32,
+    };
+    assert!(r.contains_player_point(hx, hy));
+    g.player.x = hx - ATTACK_DX;
+    g.player.y = hy + ATTACK_DY;
+    g.player.debounce = -1;
 }
 
 // 1. Participant movement: 8-way movement with acceleration (0x13FDF).
@@ -133,7 +157,7 @@ fn snowball_follows_arc_and_expires() {
     assert!(!s.step());
     assert_eq!(
         (s.x, s.y),
-        (100 + frames[0].0 as i32, 150 + frames[0].1 as i32)
+        (100 + frames[0].2 as i32, 150 + frames[0].3 as i32)
     );
     // The arc rises (negative dy) before falling again.
     let mut min_y = s.y;
@@ -179,10 +203,8 @@ fn throw_hits_overlapping_kid_only() {
         k.y = 150;
         k.behavior = 35; // idle behavior so it does not walk away
     }
-    // Player attack point (x+9, y-8) inside the box.
-    g.player.x = 104;
-    g.player.y = 140;
-    g.player.debounce = 0;
+    // Aim the cursor so its hot point (x+9, y-8) is inside the real box.
+    aim_at_kid(&mut g, 3, 0);
     let before = g.score;
     g.step(&Input {
         action: true,
@@ -268,9 +290,7 @@ fn hit_kid_dies_and_counts_toward_level() {
         k.y = 150;
         k.behavior = 35;
     }
-    g.player.x = 104;
-    g.player.y = 140;
-    g.player.debounce = 0;
+    aim_at_kid(&mut g, 3, 0);
     g.step(&Input {
         action: true,
         ..idle()

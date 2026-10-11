@@ -21,6 +21,10 @@ pub struct Snowball {
     pub frame: usize,
     pub delay: i32,
     pub done: bool,
+    /// Current sprite index in the SFFBM bank (per-frame animation).
+    pub sprite: u8,
+    /// Horizontal mirror flag of the current frame.
+    pub mirror: bool,
 }
 
 impl Snowball {
@@ -34,6 +38,8 @@ impl Snowball {
         self.frame = 0;
         self.delay = 0;
         self.done = false;
+        self.sprite = 0;
+        self.mirror = false;
     }
 
     /// One simulation step of the scripted arc (object step at 0x164EC).
@@ -46,7 +52,9 @@ impl Snowball {
             return true;
         }
         let beh = &BEHAVIORS[self.behavior];
-        if let Some((dx, dy)) = beh.frames.get(self.frame) {
+        if let Some((sprite, mirror, dx, dy)) = beh.frames.get(self.frame) {
+            self.sprite = *sprite;
+            self.mirror = *mirror != 0;
             let (nx, ny) = clamp_object(self.base_x + *dx as i32, self.base_y + *dy as i32);
             self.x = nx;
             self.y = ny;

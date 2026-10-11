@@ -151,8 +151,26 @@ impl Roam {
     /// Box origin including the current animation offset (shared object step).
     pub fn box_origin(&self) -> (i32, i32) {
         let beh = &BEHAVIORS[self.behavior];
-        let (dx, dy) = beh.frames.get(self.frame).copied().unwrap_or((0, 0));
+        let (_, _, dx, dy) = beh.frames.get(self.frame).copied().unwrap_or((0, 0, 0, 0));
         clamp_object(self.x + dx as i32, self.y + dy as i32)
+    }
+
+    /// Current sprite index in the SFFBM bank.
+    pub fn sprite(&self) -> u8 {
+        BEHAVIORS[self.behavior]
+            .frames
+            .get(self.frame)
+            .map(|f| f.0)
+            .unwrap_or(0)
+    }
+
+    /// Horizontal mirror flag of the current frame.
+    pub fn mirror(&self) -> bool {
+        BEHAVIORS[self.behavior]
+            .frames
+            .get(self.frame)
+            .map(|f| f.1 != 0)
+            .unwrap_or(false)
     }
 
     pub fn on_hit(&mut self) {

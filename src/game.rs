@@ -132,6 +132,18 @@ impl Player {
     }
 }
 
+impl Game {
+    /// Cursor marker sprite: green while throw-ready/unlimited, red otherwise
+    /// (function 0x13FDF sets [0x19C] to 0x7C or 0x8F).
+    pub fn cursor_sprite(&self) -> u8 {
+        if self.player.cooldown == 0 || self.player.debounce != 0 {
+            CURSOR_SPRITE_GREEN
+        } else {
+            CURSOR_SPRITE_RED
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Pickup {
     pub active: bool,
@@ -199,6 +211,8 @@ pub struct Game {
     pub result: Option<RoundResult>,
     pub paused: bool,
     pub hit_marker: i32,
+    /// Name shown top-left in the HUD (original reads [0x9FE] player names).
+    pub player_name: String,
 }
 
 impl Game {
@@ -239,6 +253,7 @@ impl Game {
             result: None,
             paused: false,
             hit_marker: 0,
+            player_name: "OLD NERD".to_string(),
         }
     }
 

@@ -1,18 +1,21 @@
 //! Snowball War - SDL2 front end.
 //!
 //! Owns the window, the key mapping (recovered from the original keyboard
-//! handler at 0x16D0C/0x16C78) and a fixed-timestep loop; all gameplay lives
-//! in the SDL-free `snowball_war` library.
+//! handler at 0x16D0C/0x16C78) and a fixed-timestep loop; gameplay lives in
+//! the SDL-free `snowball_war` library and rendering rasterises the original
+//! graphics into a 320x200 framebuffer that is uploaded once per frame.
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
+use sdl2::pixels::PixelFormatEnum;
 
+use snowball_war::assets::Assets;
 use snowball_war::game::{Game, SIM_HZ};
 use snowball_war::input::{direction_from_keycode, Input};
-use snowball_war::render;
+use snowball_war::render::{self, Framebuffer, H, W};
 
 /// Original keyboard scan codes for the eight direction keys.
 fn scan_code(sc: Scancode) -> Option<u8> {
@@ -34,8 +37,7 @@ fn build_input(pressed: &HashSet<Scancode>, prev: &HashSet<Scancode>) -> Input {
     let order = [0x47u8, 0x48, 0x49, 0x4B, 0x4D, 0x4F, 0x50, 0x51];
     let mut dir = 0u8;
     for code in order {
-        let hit = pressed.iter().any(|sc| scan_code(*sc) == Some(code));
-        if hit {
+        if pressed.iter().any(|sc| scan_code(*sc) == Some(code)) {
             dir = direction_from_keycode(code);
             break;
         }
@@ -52,6 +54,14 @@ fn build_input(pressed: &HashSet<Scancode>, prev: &HashSet<Scancode>) -> Input {
 }
 
 fn main() -> Result<(), String> {
+    let assets = Assets::load_default().map_err(|e| {
+        format!(
+            "cannot load assets ({e});\n\
+             build them from your own Ski or Die copy first:\n  \
+             python3 tools/extract/build_assets.py Ski_Or_Die assets"
+        )
+    })?;
+
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let window = video
@@ -65,16 +75,19 @@ fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     canvas
-        .set_logical_size(320, 200)
+        .set_logical_size(W as u32, H as u32)
+        .map_err(|e| e.to_string())?;
+    let texture_creator = canvas.texture_creator();
+    let mut texture = texture_creator
+        .create_texture_streaming(PixelFormatEnum::ARGB8888, W as u32, H as u32)
         .map_err(|e| e.to_string())?;
     let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
 
+    let mut fb = Framebuffer::new();
     let mut game = Game::new(0x5EED);
     let step = Duration::from_secs_f64(1.0 / SIM_HZ as f64);
     let mut acc = Duration::ZERO;
     let mut last = Instant::now();
-    // Key state is tracked from key events (the polled keyboard state API
-    // panics on some drivers).
     let mut pressed: HashSet<Scancode> = HashSet::new();
 
     'running: loop {
@@ -107,7 +120,15 @@ fn main() -> Result<(), String> {
             acc -= step;
         }
 
-        render::draw(&mut canvas, &game)?;
+        render::draw(&mut fb, &game, &assets);
+        texture
+            .update(None, &fb.px, W * 4)
+            .map_err(|e| e.to_string())?;
+        canvas.clear();
+        canvas
+            .copy(&texture, None, None)
+            .map_err(|e| e.to_string())?;
+        canvas.present();
         std::thread::sleep(Duration::from_millis(2));
     }
     Ok(())

@@ -5,8 +5,8 @@
 //! draws the recovered state with procedural graphics.
 
 pub mod arena;
+pub mod assets;
 pub mod data;
-pub mod font;
 pub mod game;
 pub mod input;
 pub mod participant;
