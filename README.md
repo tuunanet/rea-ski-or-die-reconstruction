@@ -27,7 +27,7 @@ snowboarding, skateboarding or other events, and not the original engine.
    library only — nothing from the game is committed):
 
    ```bash
-   python3 tools/extract/build_assets.py Ski_Or_Die assets
+   python3 tools/extract/build_assets.py Ski_Or_Die assets --preview
    ```
 
 3. **Build and play:**
@@ -43,7 +43,8 @@ the EXEPACK compression of the game executable, decodes the LZSS containers
 and image formats, recovers the 8x8 HUD font from inside the executable and
 writes `assets/snowball.pack` (SHA-256 printed; the release used here gives
 `1a45a848…100a`, 1 079 163 bytes) plus byte-exact audio data in
-`assets/audio/`. Add `--preview` for PNG/PPM preview images.
+`assets/audio/`. Drop `--preview` if you do not want the PNG/PPM preview
+images in `assets/preview/`.
 
 ## Why Snowball War
 
