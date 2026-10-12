@@ -1,14 +1,16 @@
 # Behavior specification — Snowball War
 
-Implementation-independent description of the minigame as recovered from the
-Ski or Die DOS executable. Every rule carries a confidence label:
+This document describes the minigame in a way that is independent of the
+implementation. The rules come from the Ski or Die DOS executable. Every
+rule carries a confidence label:
 
-* **CONFIRMED** — directly supported by code/data recovered with REA
-  (address cited; see `reverse-engineering-notes.md`).
-* **APPROXIMATION** — behaviour chosen where the original could not be
-  recovered statically, or an interpretation forced by conflicting evidence.
+* **CONFIRMED** — code or data recovered with REA supports the rule
+  directly (the address is cited, see `reverse-engineering-notes.md`).
+* **APPROXIMATION** — behavior that the reconstruction selects where the
+  original could not be recovered statically. It also covers an
+  interpretation that conflicting evidence forces.
 
-The spec uses frame-based time: one *frame* is one simulation step.
+The spec uses frame-based time. One *frame* is one simulation step.
 
 ---
 
@@ -26,17 +28,18 @@ The spec uses frame-based time: one *frame* is one simulation step.
                  └───────────┘   ESC (exit) → RoundOver
 ```
 
-* **Menu** — attract state (original waits for device state 1 at `0x3B0E`).
-  The reconstruction exposes a competition/practice toggle here
-  (APPROXIMATION: the original selects the mode in the shared event menu,
-  whose code was out of scope).
-* **Playing** — one *level* of a session. A session starts with
+* **Menu** is the attract state. The original waits for device state 1 at
+  `0x3B0E`. The reconstruction offers a competition and practice toggle
+  here (APPROXIMATION: the original selects the mode in the shared event
+  menu, and that code was out of scope).
+* **Playing** is one *level* of a session. A session starts with
   `score=0, level=1, snowballs=200, meter=0` (`0x3B0E`).
-* **RoundOver** — shows the final message, score, level (original continues
-  into score/transition screens drawn with `snowfight competition`).
+* **RoundOver** shows the final message, the score, and the level. The
+  original then continues into score and transition screens that use the
+  string `snowfight competition`.
 * Pause (APPROXIMATION, key `P`) freezes the simulation inside `Playing`.
 
-## 2. Level state (initialized by `0x3DF0`)
+## 2. Level state (first set by `0x3DF0`)
 
 | Variable | Init | Meaning |
 |---|---|---|
@@ -53,39 +56,41 @@ The spec uses frame-based time: one *frame* is one simulation step.
 
 ## 3. Participants and objects
 
-Four participant groups (0…3). Each owns:
+There are four participant groups (0…3). Each group owns:
 
-* **Kids (targets)** — up to 4 concurrent (the fifth slot's cursor is
-  disabled in shipped data; APPROXIMATION: the original searches 5 slots and
-  would read undefined data on the fifth).
+* **Kids (targets)** — up to 4 at the same time. The fifth slot's cursor
+  is disabled in the shipped data (APPROXIMATION: the original searches 5
+  slots and would read undefined data on the fifth).
 * **Snowballs** — up to 3 in flight (`[0x3A84+idx]`).
 
-The player controls one participant at a time (`selected`); the position,
-throw and score are **session-global** — switching only changes which
-group's kids are logged/visible per the original gate (see §9).
+The player controls one participant at a time (`selected`). The position,
+the throw, and the score are **session-global**. Switching only changes
+which group's kids are logged and visible, and the original gate decides
+this (see §9).
 
-Object kinds and their hit types:
+The object kinds and their hit types are:
 
 | kind | hit type | life |
 |---|---|---|
-| kid | 5/6/7/8 (random) | script ends or leaves arena; 0xFE after a hit |
+| kid | 5/6/7/8 (random) | script ends or the kid leaves the arena. The type is 0xFE after a hit. |
 | kid snowball | — (never hittable) | arc script ends |
-| roaming special | 2/3/4/10/11/12 | walks until out of range; 400-frame respawn |
-| pickup special | 0/1/9 | 600-frame lifetime, 600-frame respawn |
+| roaming special | 2/3/4/10/11/12 | walks until out of range. 400-frame respawn. |
+| pickup special | 0/1/9 | 600-frame lifetime. 600-frame respawn. |
 
 ## 4. Input semantics (CONFIRMED, `0x6D0C`/`0x6C78`/`0x40EE`)
 
 | Action | Binding | Semantics |
 |---|---|---|
-| Move | keypad/arrows (8-way) | direction code 1…8 (numpad layout), 0 = none; first pressed key in scan order wins |
+| Move | keypad/arrows (8-way) | direction code 1…8 (numpad layout), 0 = none. The first pressed key in scan order wins. |
 | Throw / Start | Enter (state 1) | held → repeats every 5 frames (cooldown 4 + debounce) |
 | Switch participant | Right Shift (state 2) + cardinal key | even direction 2/4/6/8 → participant 0/1/2/3 |
 | Exit round | Esc (APPROXIMATION of `[0x6C07]=1`) | → RoundOver |
 | Pause | P (APPROXIMATION of `[0x6C07]=0x19`) | freeze |
 
-The controlled marker is a **cursor/cross-hair** (sprite 124 red, or 143 green
-while the throw is ready/unlimited), not a character: kids are separate objects
-and the throw tests the cursor hot point `(x+9, y−8)` inside a kid's box.
+The controlled marker is a **cursor/cross-hair**, not a character. The
+cursor uses sprite 124 (red) or 143 (green) while the throw is ready or
+`unlimited`. Kids are separate objects. The throw tests the cursor hot
+point `(x+9, y−8)` inside the box of a kid.
 
 ## 5. Movement (CONFIRMED, `0x3FDF`)
 
@@ -105,9 +110,9 @@ x = clamp(x, 0, 299); y = clamp(y, 53, 199)
 | 1 | 4 px/frame | ≈7 moving frames |
 | 2 | 6 px/frame (cap) | ≈13 moving frames |
 
-No jump/duck; no collision with kids or arena props (the arena has
-**no cover/obstacle collision** — CONFIRMED: the only blocking logic are the
-clamps and the kid despawn thresholds).
+There is no jump or duck action. There is no collision with kids or arena
+props: the arena has **no cover or obstacle collision** (CONFIRMED). The
+clamps and the kid despawn thresholds are the only blocking logic.
 
 ## 6. Kids: spawn, motion, script (CONFIRMED, `0x427D`, `0x4338`, `0x64EC`)
 
@@ -123,7 +128,7 @@ per participant, per frame:
       log(kid) into the frame queue if this group is selected
 ```
 
-Kid frame (`0x64EC` + `0x4338`):
+The kid frame step runs at `0x64EC` and `0x4338`:
 
 ```
 position = clamp(base + frames[frame], x≤319, y≤199)
@@ -145,84 +150,101 @@ if done:
         behavior = next script byte; frame = 0; delay = 0
 ```
 
-Spawn positions (recovered): the left/right edges (x≈1…8, 290…303) at
-y≈102…145 and the centre (146,169).
+The recovered spawn positions are the left and right edges (x≈1…8,
+290…303) at y≈102…145, and the centre (146,169).
 
 ## 7. Snowballs (CONFIRMED, `0x448F`, `0x64EC`, `0x4501`)
 
-* **Creation** — only from a kid's throw (frame 5 of behavior 6/7/8), into
-  the owning participant's 3-slot pool; arc behavior by kid type:
-  `7 → 24, 6 → 23, else → 22`; `meter += 6`.
-* **Motion** — scripted ballistic arc: every frame
-  `pos = launch + (dx[frame], dy[frame])`, clamped to the arena; frame
-  advances every `delay+1` frames (arcs use delay 0 ⇒ one frame per step).
-  Arc 22 (19 frames): `dy = 0,-7,-10,-15,-17,-11,-12,-10,-8,-3,+8,+8,+18,…`
-  with a slow sideways drift — **rise then fall, no gravity integration,
-  no bounce, no wind**.
-* **Expiry** — script end removes the snowball, decrements the pool count,
-  plays a cue for the selected group, 8/256 music event.
-* **Player throw** (`0x47C1`) — on Enter:
-  `debounce = cooldown`; if `cooldown != 0` then `snowballs -= 1`
-  (clamped at 0); then **every** queued object whose box contains
-  `(x+9, y−8)` is hit-resolved (a single throw can hit several overlapping
-  objects). Queued objects with type `0xFE` are skipped.
-* **Collision box** — `x … x+w`, `y-h … y` (y = baseline). The size is the
-  **current animation frame's sprite** (`0x16E67` writes the sprite's
-  width/height into the object block), so boxes are taken from the extracted
-  sprite dimensions (`SPRITE_SIZES`, CONFIRMED via `docs/assets.md`).
+* **Creation** — a snowball comes only from a kid's throw (frame 5 of
+  behavior 6/7/8). It goes into the 3-slot pool of the owning
+  participant. The arc behavior depends on the kid type:
+  `7 → 24, 6 → 23, else → 22`. The creation adds 6 to the meter:
+  `meter += 6`.
+* **Motion** — the arc is scripted. Every frame the position is
+  `pos = launch + (dx[frame], dy[frame])`, and the arena clamps it. The
+  frame advances every `delay+1` frames (arcs use delay 0, so one frame
+  per step). Arc 22 has 19 frames and the values
+  `dy = 0,-7,-10,-15,-17,-11,-12,-10,-8,-3,+8,+8,+18,…` with a slow
+  sideways drift. The snowball **rises and then falls**. There is **no
+  gravity integration, no bounce, and no wind**.
+* **Expiry** — the end of the script removes the snowball and decrements
+  the pool count. It plays a cue for the selected group, and it starts a
+  music event with chance 8/256.
+* **Player throw** (`0x47C1`) — Enter starts the throw. The game sets
+  `debounce = cooldown`. If `cooldown != 0`, it then runs
+  `snowballs -= 1` (clamped at 0). **Every** queued object whose box
+  contains `(x+9, y−8)` is hit-resolved, so one throw can hit several
+  overlapping objects. Queued objects with type `0xFE` are skipped.
+* **Collision box** — the box is `x … x+w` and `y-h … y` (y is the
+  baseline). The size comes from the sprite of the **current animation
+  frame** (`0x16E67` writes the sprite's width and height into the object
+  block). The boxes therefore come from the extracted sprite dimensions
+  (`SPRITE_SIZES`, CONFIRMED via `docs/assets.md`).
 
 ## 8. Damage, scoring, elimination (CONFIRMED, `0x48B0`, `0x4763`)
 
 * A hit kid becomes type `0xFE` and plays its death behavior
   (18/19/20/21 for types 5/6/7/8). Behavior 21 is the **big close-up**
-  ("snowball in the face", sprites 152..155) that belongs to the snow fort.
-  The shipped binary selects it purely by kid type, so a type-8 kid hit out in
-  the field also shows the close-up there; the reconstruction keeps the type-8
-  mapping but **only at the castle** (`y >= CASTLE_Y = 165`), using the small
-  type-7 death (behavior 20) for a type-8 kid hit in the field
-  (APPROXIMATION agreed with the project owner, `src/data.rs`). **Only when that script finishes** does
-  `kids_target -= 1` and the slot free up (the spawn credit is *not*
-  returned — hits consume the budget permanently).
-* Scores: kid `5/6/7/8 → 100/75/50/25`; roaming `2 → 50`,
-  `3/10/11/12 → 30`; `4 → snowballs −25`; pickup `0 → snowballs +100`;
-  pickup `1 → meter −256`; pickup `9 → unlimited snowballs for 400 frames`.
-* There is **no player health/elimination**: the player is never damaged;
-  only the clock (and the practice meter) end a round.
-* Ammo: start 200; −1 per throw (free during unlimited); while empty,
-  +10 every 50 frames plus a forced type-0 pickup.
-* HUD (recovered draw positions): `SCORE (6,23)` value `(6,30)`;
-  `SNOWBALLS   KIDS (80,23)` values `(104,30)` / `(184,30)`;
-  `LEVEL (176,5)` value after the label; `TIME (224,23)` value `(232,30)`;
-  status line `(6,5)`; `unlimited` banner `(80,18)`;
-  round messages `(52,105)`.
+  ("snowball in the face", sprites 152..155) that belongs to the snow
+  fort. The shipped binary selects it only by kid type, so a type-8 kid
+  hit in the open field also shows the close-up there. The reconstruction
+  keeps the type-8 mapping **only at the castle**
+  (`y >= CASTLE_Y = 165`). A type-8 kid hit in the field uses the small
+  type-7 death (behavior 20) instead (APPROXIMATION agreed with the
+  project owner, `src/data.rs`). **Only when that script ends** does
+  `kids_target -= 1` and the slot become free. The spawn credit is *not*
+  returned: hits consume the budget permanently.
+* **Scores**: a kid of type `5/6/7/8` gives `100/75/50/25`. The roaming
+  object gives `2 → 50` and `3/10/11/12 → 30`. Type `4 → snowballs −25`.
+  Pickup `0 → snowballs +100`, pickup `1 → meter −256`, and pickup
+  `9 → unlimited snowballs for 400 frames`.
+* The player has **no health and no elimination**. Nothing damages the
+  player. Only the clock and the practice meter end a round.
+* **Ammo**: the round starts with 200 snowballs. A throw costs one
+  snowball, and it is free during `unlimited`. While the player has no
+  snowballs, the game gives +10 every 50 frames and forces a type-0
+  pickup.
+* **HUD** (the draw positions are recovered):
+
+  * `SCORE` label at (6,23), value at (6,30).
+  * `SNOWBALLS   KIDS` label at (80,23), values at (104,30) and
+    (184,30).
+  * `LEVEL` label at (176,5), value after the label.
+  * `TIME` label at (224,23), value at (232,30).
+  * The status line is at (6,5).
+  * The `unlimited` banner is at (80,18).
+  * The round messages are at (52,105).
 
 ## 9. Teams, compass and the visibility gate — CONFIRMED
 
-The four participants are four **teams/directions** of kids. Each team spawns
-its own kids (every 90 frames) and the compass at the top right (drawn by the
-arena art) is annotated by function `0x14160`: for every participant it draws
-`table[DS:0x39AC + active_kids]`, i.e. sprites **127..132** (the little count
-glyphs), at the DS:0x399C positions.
+The four participants are four **teams** (directions) of kids. Each team
+spawns its own kids every 90 frames. The compass at the top right comes
+from the arena art. Function `0x14160` annotates it. For every
+participant it draws `table[DS:0x39AC + active_kids]`, that is sprites
+**127..132** (the little count glyphs), at the DS:0x399C positions.
 
-The selected direction also drives the two `SFSHP.LZW` overlays: `0x14116`
-redraws the **horizon scenery band** `table[DS:0x39CE + team]` (`2,1,3,0`) at
-`(0,40)` and `0x14160` redraws the **compass** `table[DS:0x39D2 + team]`
-(`6,5,7,4`) at `(272,3)`. The records are complete images (wedge pointing
-E/S/W/N for teams 0..3, the same sectors as the count markers at DS:0x399C),
-so the compass rectangle is replaced rather than blended. Both run on a switch,
-so background and compass follow the team (details in `assets.md` §3.3).
+The selected direction also drives the two `SFSHP.LZW` overlays. Function
+`0x14116` redraws the **horizon scenery band**
+`table[DS:0x39CE + team]` (`2,1,3,0`) at `(0,40)`. Function `0x14160`
+redraws the **compass** `table[DS:0x39D2 + team]` (`6,5,7,4`) at
+`(272,3)`. The records are complete images. The wedge points E, S, W, or
+N for teams 0..3, the same sectors as the count markers at DS:0x399C.
+The compass rectangle is replaced rather than blended. Both overlays run
+on a switch, so the background and the compass follow the team (details
+in `assets.md` §3.3).
 
-Both the draw (`0x6E67`) and the hit-queue logger (`0x4245`) are gated on
-`[0x75E3] == 1`, which `0x427D/0x4501` set to `(participant == selected)`:
-**only the selected team's kids are visible and hittable**. The roaming
-object, pickups and the cursor are drawn/logged unconditionally (their calls
-run while the flag is 1).
+The draw step (`0x6E67`) and the hit-queue logger (`0x4245`) run only
+when `[0x75E3] == 1`. Functions `0x427D/0x4501` set the flag to
+`(participant == selected)`. **Only the selected team's kids are visible
+and hittable.** The roaming object, the pickups, and the cursor are
+drawn and logged without this gate (their calls run while the flag is 1).
 
-This is also how the level target stays reachable: the player switches teams
-with RShift + a cardinal key, so all four teams' spawns (4 per 90 frames,
-≈109 per level) can be attacked, while a single team alone would offer only
-≈27 spawns against a fixed target of 50 hits. The reconstruction implements
-the gate exactly (`render`/`game` draw and hit only `g.selected`).
+The level target stays reachable in this way. The player switches teams
+with RShift and a cardinal key, so all four teams' spawns (4 per 90
+frames, ≈109 per level) can be attacked. One team alone would offer only
+≈27 spawns against a fixed target of 50 hits. The reconstruction
+implements the gate exactly (`render` and `game` draw and hit only
+`g.selected`).
 
 ## 10. Round transitions (CONFIRMED, `0x3BD2`…`0x3D28`)
 
@@ -241,11 +263,12 @@ every frame, after the throw step:
   else if exit: → RoundOver
 ```
 
-Practice end: meter high byte `== 0x0F` sets the abort flag (`0x4099`).
+The meter high byte `== 0x0F` ends practice mode by setting the abort
+flag (`0x4099`).
 
 ### 10.1 The message banner (CONFIRMED, `0x13C17` / `0x13C6D`)
 
-Both round endings draw the message the same way, and the banner is what makes
+Both round endings draw the message in the same way, and the banner makes
 the light text readable over the snow:
 
 ```
@@ -263,17 +286,18 @@ mov cl,[0x7619] ; 14 (yellow)
 call 0x1630B  ; draw the message
 ```
 
-`0x1630B` is the string drawer (AX = x, BX = y, CL = colour, SI = text; byte
-0x01 in the text is a line break) and `0x17AE2` the glyph blitter. The score is
-redrawn by `0x146BB` and the HUD stays on screen, so the level end does **not**
-put extra light text on the playfield.
+`0x1630B` is the string drawer (AX = x, BX = y, CL = colour, SI = text,
+and byte 0x01 in the text is a line break). `0x17AE2` is the glyph
+blitter. `0x146BB` redraws the score, and the HUD stays on screen. The
+level end does **not** put extra light text on the playfield.
 
-The reconstruction draws exactly this banner for `Game::message` (in play) and
-for the round-over message. Its own menu and prompts (which the original either
-draws on a cleared screen or does not have at all) use one pixel black outlines
-instead, so the yellow/light colours stay readable over the arena.
+The reconstruction draws exactly this banner for `Game::message` (in
+play) and for the round-over message. The original draws its own menu and
+prompts on a cleared screen, or does not have them at all. The
+reconstruction gives these elements a one-pixel black outline instead, so
+the yellow and light colours stay readable over the arena.
 
-Time: `[0x397B]` counts 40→−1 ⇒ `time −= 1` every 41 frames; a level lasts
+`[0x397B]` counts 40→−1, so `time −= 1` every 41 frames. A level lasts
 60 units = 2460 frames (≈70 s at the reconstruction's 35 Hz).
 
 ## 11. Timing summary (CONFIRMED ratios / APPROXIMATE Hz)
@@ -295,12 +319,13 @@ Time: `[0x397B]` counts 40→−1 ⇒ `time −= 1` every 41 frames; a level las
 ## 12. Randomness
 
 All random draws are uniform bytes (original `0x5D2A`): kid type, roaming
-type, pickup type, music chance. The reconstruction substitutes a seeded
-xorshift32 (APPROXIMATION) so runs are reproducible.
+type, pickup type, and music chance. The reconstruction replaces them
+with a seeded xorshift32 (APPROXIMATION), so runs are reproducible.
 
 ## 13. Explicit non-goals
 
-* Sound/music playback — the data is extracted (`assets/audio/`), the driver
-  reimplementation is pending (see docs/assets.md §4).
+* Sound and music playback — the data is in `assets/audio/`, but the
+  driver is not re-implemented (see `docs/assets.md` §4).
 * Other Ski or Die minigames — out of scope by project definition.
-* Original art/music/source — never used; graphics are procedural.
+* Original source code — never used. The reconstruction reads the
+  extracted graphics and font from `assets/snowball.pack`.
