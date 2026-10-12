@@ -17,6 +17,15 @@ use snowball_war::game::{Game, SIM_HZ};
 use snowball_war::input::{direction_from_keycode, Input};
 use snowball_war::render::{self, Framebuffer, H, W};
 
+/// Pixel format used to upload `Framebuffer::px` to the GPU/canvas.
+///
+/// The framebuffer holds the bytes of every pixel as R, G, B, A, and `RGBA32`
+/// is the SDL format whose *in-memory* byte order is exactly that (it aliases
+/// `ABGR8888` on little-endian). `ARGB8888` is `B, G, R, A` in memory, which
+/// silently swaps the red and blue channels on screen - the EGA palette then
+/// looks nothing like the extracted assets.
+pub const FRAMEBUFFER_FORMAT: PixelFormatEnum = PixelFormatEnum::RGBA32;
+
 /// Original keyboard scan codes for the eight direction keys.
 fn scan_code(sc: Scancode) -> Option<u8> {
     Some(match sc {
@@ -79,7 +88,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let texture_creator = canvas.texture_creator();
     let mut texture = texture_creator
-        .create_texture_streaming(PixelFormatEnum::ARGB8888, W as u32, H as u32)
+        .create_texture_streaming(FRAMEBUFFER_FORMAT, W as u32, H as u32)
         .map_err(|e| e.to_string())?;
     let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
 
@@ -132,4 +141,74 @@ fn main() -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(2));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the window shows must be exactly what the renderer drew. This
+    /// guards `FRAMEBUFFER_FORMAT`: the old `ARGB8888` swapped the red and blue
+    /// channels, so the EGA palette on screen did not match the extracted
+    /// assets (sky blue came out red, yellow text cyan).
+    ///
+    /// Skipped when the asset pack is absent or no SDL video driver works.
+    #[test]
+    fn presentation_preserves_rendered_colours() {
+        let Ok(assets) = Assets::load_default() else {
+            eprintln!("skipping: assets/snowball.pack not generated");
+            return;
+        };
+        // Run headless when the caller has not picked a driver; the dummy
+        // driver still backs a real software canvas we can read back.
+        if std::env::var_os("SDL_VIDEODRIVER").is_none() {
+            std::env::set_var("SDL_VIDEODRIVER", "dummy");
+        }
+        let Ok(sdl) = sdl2::init() else {
+            eprintln!("skipping: SDL2 unavailable");
+            return;
+        };
+        let Ok(video) = sdl.video() else {
+            eprintln!("skipping: no SDL video driver");
+            return;
+        };
+
+        let mut game = Game::new(0x5EED);
+        game.start(false);
+        let mut fb = Framebuffer::new();
+        render::draw(&mut fb, &game, &assets);
+
+        let window = video
+            .window("format check", W as u32, H as u32)
+            .hidden()
+            .build()
+            .expect("window");
+        let mut canvas = window.into_canvas().software().build().expect("canvas");
+        let creator = canvas.texture_creator();
+        let mut texture = creator
+            .create_texture_streaming(FRAMEBUFFER_FORMAT, W as u32, H as u32)
+            .expect("texture");
+        texture.update(None, &fb.px, W * 4).expect("upload");
+        canvas.clear();
+        canvas.copy(&texture, None, None).expect("blit");
+        canvas.present();
+
+        let shown = canvas
+            .read_pixels(None, PixelFormatEnum::RGBA32)
+            .expect("read back");
+        assert_eq!(shown.len(), fb.px.len(), "unexpected read-back pitch");
+        let wrong = fb
+            .px
+            .iter()
+            .zip(shown.iter())
+            .filter(|(drawn, shown)| drawn != shown)
+            .count();
+        assert_eq!(
+            wrong,
+            0,
+            "{wrong} of {} channel bytes differ between the framebuffer and the \
+             presented image (check FRAMEBUFFER_FORMAT)",
+            fb.px.len()
+        );
+    }
 }

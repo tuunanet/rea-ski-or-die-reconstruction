@@ -69,6 +69,23 @@ colour indices are recovered from DS:0x7614..0x761B
 (labels 13 = light magenta, values 14 = yellow, player name 12 = light red,
 banners 10 = light green).
 
+The palette is not a guess: the video-mode routine at lm 0x17494 sets BIOS
+mode 0Dh (`mov ax,0x000D; int 0x10`, 320x200 EGA planar) and then calls
+`int 0x10` with `AX=0x1002` (set all palette registers) on the 17-byte table
+at DS:0x75F8 = `00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17 00`. That maps
+EGA colour *i* to VGA DAC entry *i* (0-7) and *i+8* (8-15), so the on-screen
+RGB values are the VGA BIOS default EGA palette - the same 8-bit values the
+extractor writes into the previews and the pack. There is no access to the DAC
+ports (0x3C8/0x3C9) anywhere in the executable, i.e. no runtime palette
+effects or custom colours.
+
+Because of that, the front end must hand the framebuffer to SDL in a format
+whose *memory* layout is R, G, B, A (`FRAMEBUFFER_FORMAT = RGBA32`, i.e.
+ABGR8888 on little-endian). Uploading the same bytes as `ARGB8888` interprets
+them as B, G, R, A and swaps red/blue, which makes the screen disagree with
+the extracted assets (blue sky becomes red, yellow text cyan). There is a
+read-back test for this in `src/main.rs`.
+
 ### 2.3 Font
 
 An 8x8 font is **inside the executable** at DS:0x6728 (lm 0xE8B8): 8 bytes per
