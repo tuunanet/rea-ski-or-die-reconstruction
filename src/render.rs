@@ -148,6 +148,25 @@ impl Framebuffer {
         let x = (W as i32 - s.chars().count() as i32 * 8) / 2;
         self.text(a, x.max(0), y, s, color_index);
     }
+
+    /// Text with a one pixel black outline around it.
+    ///
+    /// The original never needs this: its own messages sit on the banner drawn
+    /// by [`draw_banner`], and its full screen text pages clear the display to
+    /// a solid colour first. The menu and prompts of this reconstruction are
+    /// drawn straight over the arena, where the yellow and light colours would
+    /// otherwise disappear into the snow.
+    pub fn text_outlined(&mut self, a: &Assets, x: i32, y: i32, s: &str, color_index: u8) {
+        for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+            self.text(a, x + dx, y + dy, s, 0);
+        }
+        self.text(a, x, y, s, color_index);
+    }
+
+    pub fn text_center_outlined(&mut self, a: &Assets, y: i32, s: &str, color_index: u8) {
+        let x = (W as i32 - s.chars().count() as i32 * 8) / 2;
+        self.text_outlined(a, x.max(0), y, s, color_index);
+    }
 }
 
 /// HUD colours from the recovered data (DS:0x7614..0x761B).
@@ -160,14 +179,39 @@ fn number(v: i32) -> String {
     v.to_string()
 }
 
+/// The message banner the original draws behind every in-game message: a solid
+/// light blue band with a black edge, then the message on top. Without it the
+/// light text all but vanishes against the snow.
+fn draw_banner(fb: &mut Framebuffer, a: &Assets, msg: &str) {
+    let fill = a.color(BANNER_COLOR);
+    let edge = a.color(BANNER_EDGE);
+    for y in BANNER_Y0..=BANNER_Y1 {
+        for x in BANNER_X0..=BANNER_X1 {
+            let c = if y == BANNER_Y1 || x == BANNER_X0 || x == BANNER_X1 {
+                edge
+            } else {
+                fill
+            };
+            fb.put(x, y, c);
+        }
+    }
+    fb.text(
+        a,
+        BANNER_TEXT_POS.0,
+        BANNER_TEXT_POS.1,
+        msg,
+        BANNER_TEXT_COLOR,
+    );
+}
+
 pub fn draw(fb: &mut Framebuffer, g: &Game, a: &Assets) {
     fb.clear(a.color(0));
     match g.phase {
         Phase::Menu => {
             fb.blit_arena(a);
-            fb.text_center(a, 40, "SNOWBALL WAR", COL_LABEL);
-            fb.text_center(a, 56, "SKI OR DIE RECONSTRUCTION", COL_VALUE);
-            fb.text_center(
+            fb.text_center_outlined(a, 40, "SNOWBALL WAR", COL_LABEL);
+            fb.text_center_outlined(a, 56, "SKI OR DIE RECONSTRUCTION", COL_VALUE);
+            fb.text_center_outlined(
                 a,
                 84,
                 if g.practice {
@@ -177,19 +221,24 @@ pub fn draw(fb: &mut Framebuffer, g: &Game, a: &Assets) {
                 },
                 COL_MSG,
             );
-            fb.text_center(a, 104, "PRESS ENTER TO START", COL_VALUE);
-            fb.text_center(a, 124, "ARROWS MOVE  ENTER THROWS", COL_LABEL);
-            fb.text_center(a, 136, "RSHIFT+ARROW SWITCHES DIRECTION", COL_LABEL);
-            fb.text_center(a, 152, "M MODE   P PAUSE   ESC END", COL_LABEL);
+            fb.text_center_outlined(a, 104, "PRESS ENTER TO START", COL_VALUE);
+            fb.text_center_outlined(a, 124, "ARROWS MOVE  ENTER THROWS", COL_LABEL);
+            fb.text_center_outlined(a, 136, "RSHIFT+ARROW SWITCHES DIRECTION", COL_LABEL);
+            fb.text_center_outlined(a, 152, "M MODE   P PAUSE   ESC END", COL_LABEL);
         }
         Phase::RoundOver => {
             fb.blit_arena(a);
+            let (bx, by) = OVERLAY_BACKGROUND_POS;
+            fb.blit_overlay(a, OVERLAY_BACKGROUND[g.selected] as usize, bx, by, false);
+            draw_entities(fb, g, a);
+            // The round end keeps the HUD on screen (the original redraws the
+            // final score with 0x146BB), so the score and level stay readable
+            // in their usual places instead of as extra text over the snow.
+            draw_hud(fb, g, a);
             if let Some(r) = &g.result {
-                fb.text_center(a, 70, r.message, COL_MSG);
-                fb.text_center(a, 96, &format!("SCORE {}", r.score), COL_VALUE);
-                fb.text_center(a, 112, &format!("LEVEL {}", r.level), COL_VALUE);
+                draw_banner(fb, a, r.message);
             }
-            fb.text_center(a, 140, "PRESS ENTER", COL_LABEL);
+            fb.text_center_outlined(a, 130, "PRESS ENTER", COL_VALUE);
         }
         Phase::Playing => {
             fb.blit_arena(a);
@@ -199,20 +248,16 @@ pub fn draw(fb: &mut Framebuffer, g: &Game, a: &Assets) {
             draw_entities(fb, g, a);
             draw_hud(fb, g, a);
             if let Some(m) = g.message {
-                fb.text(a, fb_x_center(m), 105, m, COL_MSG);
+                draw_banner(fb, a, m);
             }
             if let Some(b) = g.banner {
                 fb.text(a, 80, 18, b, COL_MSG);
             }
             if g.paused {
-                fb.text_center(a, 100, "PAUSED", COL_VALUE);
+                fb.text_center_outlined(a, 100, "PAUSED", COL_VALUE);
             }
         }
     }
-}
-
-fn fb_x_center(s: &str) -> i32 {
-    (W as i32 - s.chars().count() as i32 * 8) / 2
 }
 
 fn draw_hud(fb: &mut Framebuffer, g: &Game, a: &Assets) {

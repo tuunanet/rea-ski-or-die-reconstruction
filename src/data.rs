@@ -829,6 +829,21 @@ pub static OVERLAY_COMPASS: [u8; 4] = [6, 5, 7, 4];
 pub const OVERLAY_BACKGROUND_POS: (i32, i32) = (0, 40);
 pub const OVERLAY_COMPASS_POS: (i32, i32) = (272, 3);
 
+/// In-game message banner, recovered from the round code (0x13C17 level clear
+/// and 0x13C6D round end). Both call the rectangle filler 0x16387 with
+/// (32,100)-(290,115) and colour [0x7614] (=9, light blue) to fill the banner,
+/// then again with colour 0 to put a black edge on the bottom and sides, and
+/// finally 0x1630B draws the message at (52,105) in [0x7619] (=14, yellow).
+/// The banner is what keeps the light message text readable over the snow.
+pub const BANNER_X0: i32 = 32;
+pub const BANNER_X1: i32 = 290;
+pub const BANNER_Y0: i32 = 100;
+pub const BANNER_Y1: i32 = 115;
+pub const BANNER_COLOR: u8 = 9;
+pub const BANNER_EDGE: u8 = 0;
+pub const BANNER_TEXT_POS: (i32, i32) = (52, 105);
+pub const BANNER_TEXT_COLOR: u8 = 14;
+
 /// Compass status positions for the four participants (x, y) - [0x399C].
 pub static COMPASS_MARKERS: [(i32, i32); 4] = [(302, 20), (292, 28), (280, 20), (292, 13)];
 

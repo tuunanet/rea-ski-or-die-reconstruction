@@ -243,6 +243,36 @@ every frame, after the throw step:
 
 Practice end: meter high byte `== 0x0F` sets the abort flag (`0x4099`).
 
+### 10.1 The message banner (CONFIRMED, `0x13C17` / `0x13C6D`)
+
+Both round endings draw the message the same way, and the banner is what makes
+the light text readable over the snow:
+
+```
+mov ax,0x20   ; x0 =  32
+mov si,0x64   ; y0 = 100
+mov bx,0x122  ; x1 = 290
+mov di,0x73   ; y1 = 115
+mov cl,[0x7614] ; 9 (light blue)   ch = [0x7615] = 10
+call 0x16387  ; fill (32,100)-(290,115) with cl, then re-call with cl=0
+              ; (ch is zeroed at 0x638C, so the second pass edges in black)
+mov si,0x390c ; " bonus for clearing level" (0x3926/0x3942 for the time-out)
+mov ax,0x34   ; x = 52
+mov bx,0x69   ; y = 105
+mov cl,[0x7619] ; 14 (yellow)
+call 0x1630B  ; draw the message
+```
+
+`0x1630B` is the string drawer (AX = x, BX = y, CL = colour, SI = text; byte
+0x01 in the text is a line break) and `0x17AE2` the glyph blitter. The score is
+redrawn by `0x146BB` and the HUD stays on screen, so the level end does **not**
+put extra light text on the playfield.
+
+The reconstruction draws exactly this banner for `Game::message` (in play) and
+for the round-over message. Its own menu and prompts (which the original either
+draws on a cleared screen or does not have at all) use one pixel black outlines
+instead, so the yellow/light colours stay readable over the arena.
+
 Time: `[0x397B]` counts 40→−1 ⇒ `time −= 1` every 41 frames; a level lasts
 60 units = 2460 frames (≈70 s at the reconstruction's 35 Hz).
 

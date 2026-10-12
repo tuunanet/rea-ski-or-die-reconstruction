@@ -231,8 +231,12 @@ docs/               reverse-engineering notes, behavior spec, asset notes
   If DOSBox becomes available, the scenarios in the notes are the natural
   first comparisons (boundary clamp, point-blank throw, level clear).
 * Menu/transition screens of the surrounding game are out of scope; the
-  reconstruction has its own menu and a round-over screen.
-* Graphics and font are original placeholder art; no proprietary assets.
+  reconstruction has its own menu and a round-over screen. The in-game messages
+  use the original's banner (`docs/behavior-spec.md` §10.1); the menu and the
+  prompts get a one pixel black outline so the light colours stay readable over
+  the arena.
+* No game art is committed: `assets/` is generated from your own copy of the
+  release by `tools/extract/build_assets.py` (see Preparation).
 
 ## License
 
