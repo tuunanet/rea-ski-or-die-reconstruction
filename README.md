@@ -1,7 +1,7 @@
 # Snowball War — a REA-driven reconstruction of a Ski or Die minigame
 
 An independent, playable reconstruction of the **Snowball War** ("snowball
-blast") minigame from the DOS version of *Ski or Die* (Epic MegaGames),
+blast") minigame from the DOS version of *Ski or Die* (Electronic Arts),
 written in Rust with SDL2. The project exists to demonstrate **REA**
 (Reverse Engineer Anything) as an AI-assisted reverse-engineering workflow:
 analyze the shipped binary, recover the gameplay rules with evidence, write
